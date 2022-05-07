@@ -1,0 +1,80 @@
+-- create users table
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  registration_date DATETIME NOT NULL
+);
+-- insert some values
+INSERT INTO users VALUES ('aaa', '2019-01-03');
+INSERT INTO users VALUES ('bbb', '2019-01-02');
+INSERT INTO users VALUES ('ccc', '2019-01-15');
+INSERT INTO users VALUES ('ddd', '2019-02-07');
+
+-- create user_usage tab;e
+CREATE TABLE user_usage (
+  id TEXT,
+  usage_date DATE NOT NULL,
+  usage_location TEXT,
+  time_spent NUMERIC
+);
+-- insert some values
+INSERT INTO user_usage VALUES ('aaa', '2019-01-03', 'US', 38);
+INSERT INTO user_usage VALUES ('aaa', '2019-02-01', 'US', 12 );
+INSERT INTO user_usage VALUES ('aaa', '2019-03-04', 'US', 30);
+INSERT INTO user_usage VALUES ('bbb', '2019-01-03', 'US', 20);
+INSERT INTO user_usage VALUES ('bbb', '2019-02-04', 'Canada', 31);
+INSERT INTO user_usage VALUES ('ccc', '2019-01-16', 'US', 40);
+INSERT INTO user_usage VALUES ('ddd', '2019-02-08', 'US', 45);
+
+-- QUERY
+WITH reg_per_month AS(
+select concat(to_char(registration_date, 'YYYY'),'-',to_char(registration_date, 'mon')) AS "registration_month",
+	   COUNT(id) AS "reg_month"
+FROM users
+GROUP BY "registration_month"
+),
+
+days_since_registration AS(
+SELECT usage_date-registration_date AS "day_reg",
+       users.id,
+       registration_date,
+       time_spent 
+FROM user_usage
+INNER JOIN users on user_usage.id=users.id
+),
+
+month_since_reg AS(
+SELECT CASE WHEN day_reg<30 THEN 'm1'
+             WHEN day_reg<60 THEN 'm2'
+             ELSE 'm3' END AS "month_reg",
+        time_spent,
+        id,
+        concat(to_char(registration_date, 'YYYY'),'-',to_char(registration_date, 'mon')) AS "registration_month"
+FROM days_since_registration
+),
+
+engaged_users AS(
+select id,
+       month_reg,
+       SUM(time_spent),
+       registration_month
+from month_since_reg
+GROUP BY id, month_reg, registration_month
+HAVING SUM(time_spent)>=30
+),
+
+
+final AS(
+SELECT engaged_users.registration_month,reg_month, month_reg, 100*COUNT(id)/reg_month AS "retention" FROM reg_per_month
+INNER JOIN engaged_users 
+ON engaged_users.registration_month = reg_per_month.registration_month
+GROUP BY engaged_users.registration_month,reg_month, month_reg 
+)
+
+SELECT registration_month,
+       ROUND(AVG(reg_month),0) AS "registered_users",
+       concat(SUM(CASE WHEN month_reg='m1' THEN retention ELSE 0 END),'%') AS "m1_retention",
+       concat(SUM(CASE WHEN month_reg='m2' THEN retention ELSE 0 END),'%') AS "m2_retention",
+       concat(SUM(CASE WHEN month_reg='m3' THEN retention ELSE 0 END),'%') AS "m3_retention"
+FROM final
+GROUP BY registration_month
+ORDER BY AVG(reg_month) DESC
